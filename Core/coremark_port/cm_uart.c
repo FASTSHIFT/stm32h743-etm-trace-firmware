@@ -44,22 +44,18 @@ extern int cm_benchmark_main(void);
 
 void coremark_main(void)
 {
-    /* Boot banner: proves the UART path works and the baud is right, printed
-     * BEFORE CoreMark so a late-attached terminal always catches it. If you
-     * see this but no CoreMark report, the issue is CoreMark, not the UART. */
+    /* Boot banner: proves the UART path works and the baud is right. */
     cm_uart_puts("\r\n=== H743 CoreMark (proposal 36 stage 0) ===\r\n");
-    cm_uart_puts("UART OK, starting CoreMark...\r\n");
+    cm_uart_puts("UART OK, starting CoreMark (looping)...\r\n");
 
-    cm_benchmark_main();
-
-    cm_uart_puts("=== CoreMark done ===\r\n");
-    /* Heartbeat so a terminal attached at any time confirms we're alive.
-     * Use a dumb busy-loop delay (NOT HAL_Delay) so it does not depend on
-     * SysTick, which board_clock_override() may leave misconfigured. */
+    /* Run CoreMark FOREVER (re-run back-to-back). A single run finishes in a
+     * few seconds and then the CPU would idle with no branch traffic, so the
+     * trace probe could never catch the benchmark phase. Looping keeps the
+     * ETM stream continuously busy so a capture at any time lands inside a
+     * real CoreMark run (proposal 36 needs to trace the running benchmark). */
     for (;;)
     {
-        volatile unsigned i;
-        cm_uart_puts("hb\r\n");
-        for (i = 0; i < 5000000u; i++) { }
+        cm_benchmark_main();
+        cm_uart_puts("--- CoreMark run complete, restarting ---\r\n");
     }
 }

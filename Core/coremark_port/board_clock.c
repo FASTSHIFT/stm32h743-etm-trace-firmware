@@ -45,7 +45,20 @@ void board_clock_override(void)
     RCC_OscInitTypeDef osc = {0};
     RCC_ClkInitTypeDef clk = {0};
 
-    /* Re-program PLL1 with our dividers (HSE source, wide VCO). */
+    /* H7 requires PLL1 to be OFF before its dividers can be re-programmed.
+     * CubeMX already runs sysclk off PLL1, so first switch sysclk to HSI and
+     * disable PLL1, THEN reconfigure. Otherwise HAL_RCC_OscConfig rejects the
+     * change (PLL busy) and we silently keep CubeMX's default clock. */
+    clk.ClockType      = RCC_CLOCKTYPE_SYSCLK;
+    clk.SYSCLKSource   = RCC_SYSCLKSOURCE_HSI;
+    (void)HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_1);  /* HSI 64M, safe WS */
+
+    osc.OscillatorType      = RCC_OSCILLATORTYPE_HSE;
+    osc.HSEState            = RCC_HSE_ON;
+    osc.PLL.PLLState        = RCC_PLL_OFF;             /* turn PLL1 off first */
+    (void)HAL_RCC_OscConfig(&osc);
+
+    /* Now program PLL1 with our dividers (HSE source, wide VCO). */
     osc.OscillatorType      = RCC_OSCILLATORTYPE_HSE;
     osc.HSEState            = RCC_HSE_ON;
     osc.PLL.PLLState        = RCC_PLL_ON;
@@ -60,8 +73,7 @@ void board_clock_override(void)
     osc.PLL.PLLFRACN        = 0;
     if (HAL_RCC_OscConfig(&osc) != HAL_OK)
     {
-        /* leave CubeMX's clock in place if our config is rejected */
-        return;
+        return;                                    /* give up -> HSI stays */
     }
 
     clk.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
