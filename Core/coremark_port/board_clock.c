@@ -34,6 +34,13 @@
 #define PLL_R_OVR 2      /* pll1_r_ck = 450/2 = 225 MHz -> TRACECLK 112.5 MHz */
 #endif
 
+/* PLL1 input clock range (ref = HSE/M). RANGE_3 = 8..16MHz (default, M=2 ref=12.5);
+ * for 480M we use M=5 ref=5MHz which needs RANGE_1 (4..8MHz). Override via
+ * -DPLL_VCIRANGE_OVR=RCC_PLL1VCIRANGE_1. */
+#ifndef PLL_VCIRANGE_OVR
+#define PLL_VCIRANGE_OVR RCC_PLL1VCIRANGE_3
+#endif
+
 /* Flash wait states scale with HCLK at the active VOS. We keep it conservative
  * (LATENCY_2 covers HCLK<=~185MHz at VOS3/VOS1); adjust if HCLK is raised. */
 #ifndef BOARD_FLASH_LATENCY
@@ -53,6 +60,18 @@ void board_clock_override(void)
     clk.SYSCLKSource   = RCC_SYSCLKSOURCE_HSI;
     (void)HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_1);  /* HSI 64M, safe WS */
 
+    /* High sysclk (>~300M) needs VOS0 + SYSCFG overdrive. main() set VOS3;
+     * raise to VOS0 here. Guarded by -DBOARD_VOS0 so low-freq builds are
+     * unaffected. (RM0433: set SCALE1 then SYSCFG ODEN -> ODRDY = VOS0.) */
+#ifdef BOARD_VOS0
+    __HAL_RCC_SYSCFG_CLK_ENABLE();
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+    while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
+    SYSCFG->PWRCR |= SYSCFG_PWRCR_ODEN;                /* overdrive -> VOS0 */
+    while (!(SYSCFG->PWRCR & SYSCFG_PWRCR_ODEN)) {}
+    (void)SYSCFG->PWRCR;
+#endif
+
     osc.OscillatorType      = RCC_OSCILLATORTYPE_HSE;
     osc.HSEState            = RCC_HSE_ON;
     osc.PLL.PLLState        = RCC_PLL_OFF;             /* turn PLL1 off first */
@@ -68,7 +87,7 @@ void board_clock_override(void)
     osc.PLL.PLLP            = PLL_P_OVR;
     osc.PLL.PLLQ            = PLL_Q_OVR;
     osc.PLL.PLLR            = PLL_R_OVR;
-    osc.PLL.PLLRGE          = RCC_PLL1VCIRANGE_3;   /* ref 8..16 MHz */
+    osc.PLL.PLLRGE          = PLL_VCIRANGE_OVR;     /* ref range, default 8..16 */
     osc.PLL.PLLVCOSEL       = RCC_PLL1VCOWIDE;      /* 192..836 MHz */
     osc.PLL.PLLFRACN        = 0;
     if (HAL_RCC_OscConfig(&osc) != HAL_OK)
