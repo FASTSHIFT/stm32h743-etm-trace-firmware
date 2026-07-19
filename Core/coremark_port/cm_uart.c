@@ -45,7 +45,19 @@ extern int cm_benchmark_main(void);
 void coremark_main(void)
 {
     /* Boot banner: proves the UART path works and the baud is right. */
-    cm_uart_puts("\r\n=== H743 CoreMark (proposal 36 stage 0) ===\r\n");
+    cm_uart_puts("\r\n=== H743 CoreMark (proposal 36) ===\r\n");
+
+    /* Stage 3: I/D cache. Enabled at build time via -DBOARD_ENABLE_CACHE so it
+     * stays a single, explicit variable in the incremental plan. The M7 caches
+     * are what let it run at full instruction throughput (proposal 29); expect
+     * a large CoreMark score jump AND a jump in ETM trace byte-rate. */
+#ifdef BOARD_ENABLE_CACHE
+    SCB_EnableICache();
+    SCB_EnableDCache();
+    cm_uart_puts("I/D cache: ENABLED\r\n");
+#else
+    cm_uart_puts("I/D cache: disabled\r\n");
+#endif
     cm_uart_puts("UART OK, starting CoreMark (looping)...\r\n");
 
     /* Run CoreMark FOREVER (re-run back-to-back). A single run finishes in a
