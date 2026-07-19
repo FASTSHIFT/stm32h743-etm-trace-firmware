@@ -11,6 +11,19 @@ static UART_HandleTypeDef *s_huart = 0;
 void cm_uart_init(UART_HandleTypeDef *huart)
 {
     s_huart = huart;
+    /* MX_USART1_UART_Init() ran at CubeMX's default clock, BEFORE
+     * board_clock_override() changed sysclk/APB. Re-init here so the baud
+     * divisor is recomputed for the new (post-override) UART kernel clock;
+     * otherwise the baud rate is wrong and nothing legible comes out. */
+    if (huart)
+        HAL_UART_Init(huart);
+}
+
+/* Blocking string helper (no timing constraints; used for boot banner). */
+static void cm_uart_puts(const char *s)
+{
+    while (s && *s)
+        cm_uart_send_char(*s++);
 }
 
 void cm_uart_send_char(char c)
@@ -31,6 +44,22 @@ extern int cm_benchmark_main(void);
 
 void coremark_main(void)
 {
+    /* Boot banner: proves the UART path works and the baud is right, printed
+     * BEFORE CoreMark so a late-attached terminal always catches it. If you
+     * see this but no CoreMark report, the issue is CoreMark, not the UART. */
+    cm_uart_puts("\r\n=== H743 CoreMark (proposal 36 stage 0) ===\r\n");
+    cm_uart_puts("UART OK, starting CoreMark...\r\n");
+
     cm_benchmark_main();
-    for (;;) { /* idle after the run; score already printed */ }
+
+    cm_uart_puts("=== CoreMark done ===\r\n");
+    /* Heartbeat so a terminal attached at any time confirms we're alive.
+     * Use a dumb busy-loop delay (NOT HAL_Delay) so it does not depend on
+     * SysTick, which board_clock_override() may leave misconfigured. */
+    for (;;)
+    {
+        volatile unsigned i;
+        cm_uart_puts("hb\r\n");
+        for (i = 0; i < 5000000u; i++) { }
+    }
 }
