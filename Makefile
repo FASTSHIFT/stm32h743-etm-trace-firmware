@@ -29,7 +29,7 @@ DEBUG = 1
 # for verifying per-instruction decode order + conditional-branch atoms.
 # (The earlier -O0 "crash" was overclocking from the wrong 8MHz HSE base, now
 # fixed to 25MHz -- -O0 itself is fine.)
-OPT = -O0
+OPT = -O3
 
 
 #######################################
@@ -127,7 +127,7 @@ C_DEFS =  \
 -DSTM32H743xx \
 -DITERATIONS=2000 \
 -DPERFORMANCE_RUN=1 \
--DFLAGS_STR=\"-O0\"
+-DFLAGS_STR=\"-O3\"
 
 
 # AS includes
