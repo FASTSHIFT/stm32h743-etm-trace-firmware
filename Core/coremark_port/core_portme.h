@@ -84,6 +84,12 @@ typedef struct CORE_PORTABLE_S
     ee_u8 portable_id;
 } core_portable;
 
+/* Number of contexts (single-threaded here). Defined in core_portme.c. */
+extern ee_u32 default_num_contexts;
+
+/* CoreMark's own printf (ee_printf.c in this port). */
+int ee_printf(const char *fmt, ...);
+
 /* Sysclock provided by CMSIS system_stm32h7xx.c */
 extern unsigned int SystemCoreClock;
 
