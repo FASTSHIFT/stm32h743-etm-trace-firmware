@@ -95,6 +95,14 @@ void board_clock_override(void)
         return;                                    /* give up -> HSI stays */
     }
 
+    /* NB: HAL_RCC_OscConfig() already enables DIVP1EN/DIVQ1EN/DIVR1EN for us
+     * (verified on-board: RCC_PLLCFGR = 0x01ff010d, all three set), so
+     * pll1_r_ck -- which feeds TRACECLK -- needs no extra poke here.
+     * Watch the register OFFSETS when checking this over SWD: PLLCKSELR is at
+     * RCC+0x28 (0x58024428) and PLLCFGR at RCC+0x2C (0x5802442C). Reading 0x28
+     * by mistake shows 0x01020022, whose bit18 is clear, which looks exactly
+     * like "pll1_r_ck disabled, no TRACECLK" and is purely a misread. */
+
     clk.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
                        | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2
                        | RCC_CLOCKTYPE_D3PCLK1 | RCC_CLOCKTYPE_D1PCLK1;
