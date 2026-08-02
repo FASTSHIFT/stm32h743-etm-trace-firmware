@@ -305,7 +305,6 @@ int main(void)
    * ee_printf; coremark_main() runs the benchmark, prints the score, idles. */
   board_clock_override();
   cm_uart_init(&huart1);
-  coremark_main();
   /* main_loop();  // old func_test workload (unused now) */
   /* USER CODE END 2 */
 
@@ -313,6 +312,11 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    /* Run CoreMark continuously so the trace stream always contains a full
+     * round to capture (ITERATIONS kept small so one round fits in a small
+     * slice). Was a single coremark_main() then idle -- too short/ill-timed to
+     * catch a complete round on a saturated stream. */
+    coremark_main();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
