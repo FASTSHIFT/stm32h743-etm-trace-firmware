@@ -75,7 +75,8 @@ Core/coremark/core_util.c \
 Core/coremark_port/core_portme.c \
 Core/coremark_port/ee_printf.c \
 Core/coremark_port/cm_uart.c \
-Core/coremark_port/board_clock.c
+Core/coremark_port/board_clock.c \
+Core/coremark_port/etm_selftrace.c
 
 # ASM sources
 ASM_SOURCES =  \

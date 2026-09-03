@@ -306,6 +306,14 @@ int main(void)
   board_clock_override();
   cm_uart_init(&huart1);
   /* main_loop();  // old func_test workload (unused now) */
+#ifdef ETM_SELFTRACE
+  /* Self-contained ETM trace bring-up + deterministic loop (no openocd needed
+   * to configure trace). Sets up TPIU/CSTF/ETF/ETM in firmware, disables
+   * SysTick, and spins a fixed call tree forever. Never returns. Used for the
+   * DAP-reads-ETF vs FPGA-captures-TPIU physical cross-check. */
+  extern void etm_selftrace_run(void);
+  etm_selftrace_run();
+#endif
   /* USER CODE END 2 */
 
   /* Infinite loop */
