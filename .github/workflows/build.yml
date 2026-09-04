@@ -6,7 +6,7 @@ on:
 
 jobs:
   arm-gcc-build:
-    name: arm-none-eabi build (Makefile)
+    name: arm-none-eabi build (default + selftrace O0 variants)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,57 +29,33 @@ jobs:
           cp -r /tmp/CubeH7/Drivers/CMSIS/Device/ST/STM32H7xx/Include Drivers/CMSIS/Device/ST/STM32H7xx/
           cp -r /tmp/CubeH7/Drivers/CMSIS/Include Drivers/CMSIS/
 
-      - name: Build firmware (default OPT=-O3)
+      - name: Build default (OPT=-O3, no ETM_SELFTRACE)
         run: |
           rm -rf build
           make -j"$(nproc)"
-
-      - name: Confirm artefacts exist and report size
-        run: |
           test -f build/H743_Blink.elf
           test -f build/H743_Blink.bin
           test -f build/H743_Blink.hex
           arm-none-eabi-size build/H743_Blink.elf
+          mv build build.default
 
-      - name: Upload firmware artefacts
+      - name: Build selftrace (OPT=-O0, -DETM_SELFTRACE)
+        run: |
+          rm -rf build
+          # Matches cortrace perf export baseline: selftrace mode, unoptimised
+          # so every function call keeps its BL/BLX.
+          make -j"$(nproc)" OPT=-O0 EXTRA_CFLAGS=-DETM_SELFTRACE
+          test -f build/H743_Blink.elf
+          arm-none-eabi-size build/H743_Blink.elf
+          mv build build.selftrace
+
+      - name: Upload artefacts
         uses: actions/upload-artifact@v4
         with:
           name: h743-blink-firmware
           path: |
-            build/H743_Blink.elf
-            build/H743_Blink.bin
-            build/H743_Blink.hex
-            build/H743_Blink.map
-
-  arm-gcc-build-selftrace-O0:
-    name: arm-none-eabi build (ETM_SELFTRACE + O0)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install arm-none-eabi toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi
-
-      - name: Fetch STM32CubeH7 v1.9.1 HAL + CMSIS
-        run: |
-          set -eu
-          git clone --depth 1 -b v1.9.1 https://github.com/STMicroelectronics/STM32CubeH7 /tmp/CubeH7
-          mkdir -p Drivers/CMSIS/Device/ST/STM32H7xx
-          cp -r /tmp/CubeH7/Drivers/STM32H7xx_HAL_Driver Drivers/
-          cp -r /tmp/CubeH7/Drivers/CMSIS/Device/ST/STM32H7xx/Include Drivers/CMSIS/Device/ST/STM32H7xx/
-          cp -r /tmp/CubeH7/Drivers/CMSIS/Include Drivers/CMSIS/
-
-      - name: Build firmware (ETM_SELFTRACE + OPT=-O0)
-        run: |
-          rm -rf build
-          # Match the config used for the cortrace perf export baseline
-          # (selftrace mode, unoptimised so every call keeps its BL/BLX).
-          make -j"$(nproc)" OPT=-O0 EXTRA_CFLAGS=-DETM_SELFTRACE
-
-      - name: Confirm artefacts and report size
-        run: |
-          test -f build/H743_Blink.elf
-          arm-none-eabi-size build/H743_Blink.elf
+            build.default/H743_Blink.elf
+            build.default/H743_Blink.bin
+            build.default/H743_Blink.hex
+            build.default/H743_Blink.map
+            build.selftrace/H743_Blink.elf
