@@ -17,6 +17,18 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi
 
+      # HAL / CMSIS are intentionally not committed to this repo (regenerated
+      # from the .ioc via CubeMX). CI must fetch them from STM32CubeH7 v1.9.1
+      # (matches ProjectManager.FirmwarePackage in H743_Blink.ioc).
+      - name: Fetch STM32CubeH7 v1.9.1 HAL + CMSIS
+        run: |
+          set -eu
+          git clone --depth 1 -b v1.9.1 https://github.com/STMicroelectronics/STM32CubeH7 /tmp/CubeH7
+          mkdir -p Drivers/CMSIS/Device/ST/STM32H7xx
+          cp -r /tmp/CubeH7/Drivers/STM32H7xx_HAL_Driver Drivers/
+          cp -r /tmp/CubeH7/Drivers/CMSIS/Device/ST/STM32H7xx/Include Drivers/CMSIS/Device/ST/STM32H7xx/
+          cp -r /tmp/CubeH7/Drivers/CMSIS/Include Drivers/CMSIS/
+
       - name: Build firmware (default OPT=-O3)
         run: |
           rm -rf build
@@ -50,6 +62,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi
+
+      - name: Fetch STM32CubeH7 v1.9.1 HAL + CMSIS
+        run: |
+          set -eu
+          git clone --depth 1 -b v1.9.1 https://github.com/STMicroelectronics/STM32CubeH7 /tmp/CubeH7
+          mkdir -p Drivers/CMSIS/Device/ST/STM32H7xx
+          cp -r /tmp/CubeH7/Drivers/STM32H7xx_HAL_Driver Drivers/
+          cp -r /tmp/CubeH7/Drivers/CMSIS/Device/ST/STM32H7xx/Include Drivers/CMSIS/Device/ST/STM32H7xx/
+          cp -r /tmp/CubeH7/Drivers/CMSIS/Include Drivers/CMSIS/
 
       - name: Build firmware (ETM_SELFTRACE + OPT=-O0)
         run: |
