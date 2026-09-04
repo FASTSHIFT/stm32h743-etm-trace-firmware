@@ -151,6 +151,10 @@ ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffuncti
 
 CFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections
 
+# Extra flags/defines injected from the command line, e.g. for CI variants:
+#   make EXTRA_CFLAGS="-DETM_SELFTRACE" OPT=-O0
+CFLAGS += $(EXTRA_CFLAGS)
+
 ifeq ($(DEBUG), 1)
 CFLAGS += -g -gdwarf-2
 endif
