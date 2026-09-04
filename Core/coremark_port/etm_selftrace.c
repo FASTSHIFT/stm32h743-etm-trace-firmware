@@ -60,12 +60,16 @@ static void systick_off(void)
     REG(0xE000E010) = 0;   /* SYST_CSR = 0: disable counter + int + clksrc */
 }
 
+#ifdef ETM_SELFTRACE_SYSTICK
 /* ------- SysTick ON (test: does periodic exception disturb capture/decode?) -
  * Build with -DETM_SELFTRACE_SYSTICK to keep SysTick firing. This exercises the
  * ETMv4 EXCEPTION / EXCEPTION_RET path (entry+return address) in the decoder --
  * historically the mortrall false-recursion hot spot. SysTick_Handler already
  * exists in stm32h7xx_it.c (HAL_IncTick). We set a short reload so several
- * interrupts land inside the ETF window. */
+ * interrupts land inside the ETF window.
+ *
+ * Gated behind ETM_SELFTRACE_SYSTICK so -Werror doesn't fire on the unused
+ * function in the default (SysTick-off) build. */
 static void systick_on(void)
 {
     /* 1 ms tick at the post-override core clock (150 MHz sysclk -> RVR=150000-1).
@@ -77,6 +81,7 @@ static void systick_on(void)
     /* SYST_CSR: ENABLE(0) | TICKINT(1) | CLKSOURCE(2, processor clock) */
     REG(0xE000E010) = 0x00000007u;
 }
+#endif
 
 /* ------- trace bring-up (mirrors etm_enable_h743.cfg, BB=0/STALL=0) ------- */
 static void trace_setup_4bit(void)

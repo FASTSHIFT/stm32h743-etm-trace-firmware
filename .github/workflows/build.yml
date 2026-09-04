@@ -31,22 +31,24 @@ jobs:
           cp -r /tmp/CubeH7/Drivers/CMSIS/Device/ST/STM32H7xx/Include Drivers/CMSIS/Device/ST/STM32H7xx/
           cp -r /tmp/CubeH7/Drivers/CMSIS/Include Drivers/CMSIS/
 
-      - name: Build default (OPT=-O3, no ETM_SELFTRACE)
+      # -Werror on both variants: any new warning fails CI. Keeps the tree
+      # clean so real issues aren't drowned in noise.
+      - name: Build default (OPT=-O3, no ETM_SELFTRACE, -Werror)
         run: |
           rm -rf build
-          make -j"$(nproc)"
+          make -j"$(nproc)" EXTRA_CFLAGS=-Werror
           test -f build/H743_Blink.elf
           test -f build/H743_Blink.bin
           test -f build/H743_Blink.hex
           arm-none-eabi-size build/H743_Blink.elf
           mv build build.default
 
-      - name: Build selftrace (OPT=-O0, -DETM_SELFTRACE)
+      - name: Build selftrace (OPT=-O0, -DETM_SELFTRACE, -Werror)
         run: |
           rm -rf build
           # Matches cortrace perf export baseline: selftrace mode, unoptimised
           # so every function call keeps its BL/BLX.
-          make -j"$(nproc)" OPT=-O0 EXTRA_CFLAGS=-DETM_SELFTRACE
+          make -j"$(nproc)" OPT=-O0 EXTRA_CFLAGS="-DETM_SELFTRACE -Werror"
           test -f build/H743_Blink.elf
           arm-none-eabi-size build/H743_Blink.elf
           mv build build.selftrace
