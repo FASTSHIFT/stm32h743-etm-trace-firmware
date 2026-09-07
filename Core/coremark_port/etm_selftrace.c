@@ -76,6 +76,17 @@ void etm_selftrace_setup(const struct etm_cfg *cfg)
 {
     if (!cfg) cfg = &etm_cfg_default;
 
+    /* 0a) SYSCFG I/O compensation cell. On H7, VERY_HIGH-speed GPIO only
+     * reaches its rated slew when the compensation cell is enabled; without it
+     * the pads fall back to a slower default drive (measured: PE5 rise 5.5 ns
+     * = 62% of the 8.8 ns half-UI @56 MHz). Clock SYSCFG (RCC_APB4ENR.SYSCFGEN,
+     * bit1) then set SYSCFG_CCCSR.EN (bit0) and wait for READY (bit8). */
+    REG(0x580244F4) |= 0x00000002u;             /* RCC_APB4ENR.SYSCFGEN */
+    (void)REG(0x580244F4);
+    REG(0x58000420) |= 0x00000001u;             /* SYSCFG_CCCSR.EN */
+    for (volatile int i = 0; i < 10000; i++)
+        if (REG(0x58000420) & 0x00000100u) break; /* wait CCCSR.READY */
+
     /* 0) GPIOE PE2..PE6 -> AF0, very-high speed, push-pull. */
     REG(0x580244E0) |= 0x00000010u;
     uint32_t moder = REG(0x58021000);
