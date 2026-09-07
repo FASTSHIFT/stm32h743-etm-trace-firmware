@@ -466,25 +466,35 @@ void workload_run(void)
                 etm_selftrace_setup(&s_etm);
                 s_etm_dirty = 0;
             }
+            /* PURE deterministic loop. cli_poll() (and the printf/argparse it
+             * can call) MUST NOT be interleaved with det_iter -- it pollutes
+             * the trace with cli_poll/printf/_vfprintf_r frames and breaks the
+             * structural invariant check (2026-09-07: FPGA perf showed
+             * cli_poll+printf inside node()). Only peek the UART RX flag (one
+             * MMIO read, no call) between iterations; enter the CLI machinery
+             * ONLY when a byte is actually waiting, at which point the user is
+             * deliberately interrupting the run so trace purity no longer
+             * matters. */
             while (!s_workload_changed && s_workload == WL_SELFTRACE) {
                 etm_selftrace_iterate();
-                cli_poll();
+                if (s_huart &&
+                    (s_huart->Instance->ISR & USART_ISR_RXNE_RXFNE)) {
+                    cli_poll();
+                }
             }
             break;
 
         case WL_COREMARK:
-            /* coremark_main() loops internally; break out to CLI between
-             * runs by having it check a public flag would be nice, but
-             * CoreMark upstream is untouched. Instead we set a short
-             * ITERATIONS at build time so each round returns quickly, and
-             * we cli_poll() between rounds via cm_uart_puts side effects.
-             * For now: run one round then re-check workload. */
+            /* selftrace's pure mode masks IRQs (PRIMASK=1); restore them here
+             * so HAL ticks / peripherals work for CoreMark. */
+            __asm volatile ("cpsie i" ::: "memory");
             coremark_main_one();
             cli_poll();
             break;
 
         case WL_IDLE:
         default:
+            __asm volatile ("cpsie i" ::: "memory");  /* undo selftrace mask */
             while (!s_workload_changed && s_workload == WL_IDLE) {
                 cli_poll();
                 __asm volatile ("wfi");

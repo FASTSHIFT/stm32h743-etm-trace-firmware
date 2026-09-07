@@ -50,7 +50,16 @@ static uint32_t det_iter(uint32_t seed)
 
 /* ------- SysTick control ------------------------------------------------- */
 
-static void systick_off(void) { REG(0xE000E010) = 0; }
+static void systick_off(void)
+{
+    REG(0xE000E010) = 0;            /* SYST_CSR = 0: disable counter + int */
+    REG(0xE000E018) = 0;            /* SYST_CVR = 0: clear current value */
+    /* Clear a possibly-already-pending SysTick so a latched tick can't fire
+     * one more IRQ after we disable it (seen on the golden dump: a single
+     * SysTick_Handler broke one det_iter mid-leaf_add). SCB ICSR @ 0xE000ED04,
+     * PENDSTCLR = bit25 clears the pending SysTick exception. */
+    REG(0xE000ED04) = (1u << 25);
+}
 
 static void systick_on(void)
 {
@@ -113,8 +122,18 @@ void etm_selftrace_setup(const struct etm_cfg *cfg)
     REG(0xE0041034) = 0x0000000Cu;                          /* TRCSYNCPR 2^12 */
     REG(0xE0041004) = 0x00000001u;                          /* TRCPRGCTLR.EN */
 
-    if (cfg->systick) systick_on();
-    else              systick_off();
+    if (cfg->systick) {
+        systick_on();
+        __asm volatile ("cpsie i" ::: "memory");   /* need IRQs for SysTick test */
+    } else {
+        systick_off();
+        /* PURE deterministic mode: mask ALL interrupts (PRIMASK=1) so no
+         * SysTick / EXTI / stray IRQ can preempt det_iter mid-node and break
+         * the structural invariant. The UART CLI still works because cli_poll
+         * peeks the RX FIFO by polling (no IRQ needed). Re-enabled only if the
+         * user switches to a workload that needs interrupts. */
+        __asm volatile ("cpsid i" ::: "memory");
+    }
 }
 
 void etm_selftrace_iterate(void)
