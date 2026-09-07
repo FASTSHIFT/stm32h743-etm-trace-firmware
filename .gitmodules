@@ -1,3 +1,6 @@
 [submodule "Core/coremark"]
 	path = Core/coremark
 	url = https://github.com/eembc/coremark
+[submodule "Third-Party/argparse"]
+	path = Third-Party/argparse
+	url = https://github.com/FASTSHIFT/argparse.git
