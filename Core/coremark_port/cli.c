@@ -64,6 +64,12 @@ static int uart_getc(void)
 
 enum workload_kind { WL_IDLE, WL_SELFTRACE, WL_COREMARK };
 
+/* Boot default. WL_SELFTRACE = go straight into the pure capture loop at cold
+ * init with ZERO CLI/UART activity, so a DAP-reset-then-capture gives a trace
+ * with nothing but det_iter/node/leaf (no argparse/HAL_UART/cmd_* pollution).
+ * The CLI is still reachable during the ~pre-workload window and for the other
+ * workloads; to reconfigure freq, hold in idle by building with WL_IDLE, or
+ * poke pll over SWD. For the clean cross-check flow we want selftrace-at-boot. */
 static enum workload_kind s_workload = WL_SELFTRACE;   /* boot default */
 static struct etm_cfg     s_etm      = { .bb = 1, .stall = 1, .systick = 0 };
 static uint8_t            s_etm_dirty = 1;   /* re-apply on next selftrace start */
@@ -466,23 +472,19 @@ void workload_run(void)
                 etm_selftrace_setup(&s_etm);
                 s_etm_dirty = 0;
             }
-            /* PURE deterministic loop. cli_poll() (and the printf/argparse it
-             * can call) MUST NOT be interleaved with det_iter -- it pollutes
-             * the trace with cli_poll/printf/_vfprintf_r frames and breaks the
-             * structural invariant check (2026-09-07: FPGA perf showed
-             * cli_poll+printf inside node()). Only peek the UART RX flag (one
-             * MMIO read, no call) between iterations; enter the CLI machinery
-             * ONLY when a byte is actually waiting, at which point the user is
-             * deliberately interrupting the run so trace purity no longer
-             * matters. */
-            while (!s_workload_changed && s_workload == WL_SELFTRACE) {
+            /* ABSOLUTELY PURE deterministic loop -- NO UART, NO branch check,
+             * nothing but det_iter forever. Rationale (2026-09-07): any UART
+             * peek between batches let stale RX bytes trigger cli_poll ->
+             * argparse, and the decoded trace was dominated by argparse_parse/
+             * argparse_long_opt instead of det_iter/node/leaf. The old pre-CLI
+             * firmware that decoded cleanly was a bare `for(;;) det_iter()`;
+             * match it exactly. To change frequency or workload, set it BEFORE
+             * `run selftrace` (or via the cold-init default) and use the DAP
+             * `reset` to leave -- selftrace is a fire-and-forget capture mode.
+             * IRQs are already masked (PRIMASK=1) so nothing preempts this. */
+            for (;;)
                 etm_selftrace_iterate();
-                if (s_huart &&
-                    (s_huart->Instance->ISR & USART_ISR_RXNE_RXFNE)) {
-                    cli_poll();
-                }
-            }
-            break;
+            /* unreachable */
 
         case WL_COREMARK:
             /* selftrace's pure mode masks IRQs (PRIMASK=1); restore them here
