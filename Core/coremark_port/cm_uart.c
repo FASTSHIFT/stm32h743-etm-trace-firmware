@@ -42,42 +42,19 @@ void cm_uart_send_char(char c)
  */
 extern int cm_benchmark_main(void);
 
+/* Runtime cache control moved to cli.c (`cache on|off`); CoreMark itself no
+ * longer touches SCB caches. Callers wanting cache during a run should
+ * `cache on` from the CLI first, or let the boot default (both off) stand. */
+
+void coremark_main_one(void)
+{
+    cm_benchmark_main();
+    cm_uart_puts("--- CoreMark run complete ---\r\n");
+}
+
 void coremark_main(void)
 {
-    /* Boot banner: proves the UART path works and the baud is right. */
     cm_uart_puts("\r\n=== H743 CoreMark (proposal 36) ===\r\n");
-
-    /* proposal 37 r30: RUNTIME cache toggle for a TRUE single-variable test.
-     * The cache decision is read from Backup SRAM (D3 domain, 0x38800000),
-     * which survives reset and is writable by openocd BEFORE resume. This way
-     * BOTH runs flash the SAME .bin and decode with the SAME ELF -- the only
-     * difference is one word openocd pokes, so mem.bin is byte-identical
-     * (r30 killed the old -DBOARD_ENABLE_CACHE approach: it produced two
-     * different binaries, 2615 bytes apart, breaking single-variable purity).
-     *   openocd: mww 0x38800000 0x0000CACE  -> enable cache
-     *            mww 0x38800000 0x00000000  -> keep cache disabled
-     * Compile-time -DBOARD_ENABLE_CACHE still forces enable if the magic is
-     * unset (back-compat / default). */
-    {
-        /* Flag word in RAM_D1 (0x24000000). CubeMX puts .data/.bss in DTCMRAM,
-         * so the C startup NEVER touches RAM_D1 -- our flag survives from the
-         * openocd poke (done at reset-halt, before main) through startup into
-         * here. D1 domain SRAM is clocked by default; openocd can read/write it.
-         *   openocd: mww 0x24000000 0x0000CACE -> enable ; 0x0 -> disable */
-        volatile uint32_t *cache_flag = (volatile uint32_t *)0x24000000u;
-        int enable = (*cache_flag == 0x0000CACEu);
-#ifdef BOARD_ENABLE_CACHE
-        if (*cache_flag != 0x00000000u)   /* magic 0 explicitly disables */
-            enable = 1;
-#endif
-        if (enable) {
-            SCB_EnableICache();
-            SCB_EnableDCache();
-            cm_uart_puts("I/D cache: ENABLED (runtime)\r\n");
-        } else {
-            cm_uart_puts("I/D cache: disabled (runtime)\r\n");
-        }
-    }
     cm_uart_puts("UART OK, starting CoreMark (looping)...\r\n");
 
     /* Run CoreMark FOREVER (re-run back-to-back). A single run finishes in a

@@ -31,30 +31,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* PLL1 dividers, overridable at build time via -DPLL_[MNPQR]_OVR=... (see
- * build_h743.sh). Kept in the USER region so CubeMX regeneration will NOT wipe
- * them. HSE is 25 MHz on this board (NOT 8 MHz).
- *   ref  = HSE / M          (PLL input, must be 4..16 MHz for RANGE used)
- *   VCO  = ref * N          (192..836 MHz wide mode)
- *   SYSCLK   = VCO / P
- *   TRACECLK = pll1_r_ck = VCO / R
- * Default M=2 N=32 P=2 R=4 with HSE=25M -> ref=12.5M, VCO=400M,
- *   SYSCLK=200M, HCLK=SYSCLK/2=100M, TRACECLK=100M. */
-#ifndef PLL_M_OVR
-#define PLL_M_OVR 2
-#endif
-#ifndef PLL_N_OVR
-#define PLL_N_OVR 32
-#endif
-#ifndef PLL_P_OVR
-#define PLL_P_OVR 2
-#endif
-#ifndef PLL_Q_OVR
-#define PLL_Q_OVR 2
-#endif
-#ifndef PLL_R_OVR
-#define PLL_R_OVR 4
-#endif
+/* PLL dividers used to live here (dead defines, board_clock.c owns the real
+ * cold-init values; runtime changes go via the UART CLI `pll --apply`). */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -299,36 +277,29 @@ int main(void)
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  /* proposal 36 stage 0: run CoreMark instead of func_test.
-   * board_clock_override() re-programs PLL to 150M sysclk / 112.5M TRACECLK
-   * (survives CubeMX regen); cm_uart_init registers USART1 (PA9/PA10) for
-   * ee_printf; coremark_main() runs the benchmark, prints the score, idles. */
+  /* Boot order:
+   *   board_clock_override() -> cold-init PLL to sysclk 150M / pll1_r_ck 225M
+   *   cm_uart_init(&huart1)  -> shared USART1 handle for printf/CLI/ee_printf
+   *   cli_init(&huart1)      -> arm the argparse-based UART command line
+   * After this main() falls into the CLI-driven scheduler in the WHILE loop
+   * (see workload_run() in cli.c). The workload (selftrace / coremark / idle)
+   * is chosen at runtime via the `run` command -- no compile switch. */
   board_clock_override();
   cm_uart_init(&huart1);
-  /* main_loop();  // old func_test workload (unused now) */
-#ifdef ETM_SELFTRACE
-  /* Self-contained ETM trace bring-up + deterministic loop (no openocd needed
-   * to configure trace). Sets up TPIU/CSTF/ETF/ETM in firmware, disables
-   * SysTick, and spins a fixed call tree forever. Never returns. Used for the
-   * DAP-reads-ETF vs FPGA-captures-TPIU physical cross-check. */
-  extern void etm_selftrace_run(void);
-  etm_selftrace_run();
-#endif
+  extern void cli_init(UART_HandleTypeDef *huart);
+  cli_init(&huart1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
   {
-    /* Run CoreMark continuously so the trace stream always contains a full
-     * round to capture (ITERATIONS kept small so one round fits in a small
-     * slice). Was a single coremark_main() then idle -- too short/ill-timed to
-     * catch a complete round on a saturated stream. */
-    coremark_main();
+    extern void workload_run(void);
+    workload_run();  /* never returns; polls CLI + runs the selected task */
+  }
+  while (1) { }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
   /* USER CODE END 3 */
 }
 

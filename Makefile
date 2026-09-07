@@ -76,7 +76,10 @@ Core/coremark_port/core_portme.c \
 Core/coremark_port/ee_printf.c \
 Core/coremark_port/cm_uart.c \
 Core/coremark_port/board_clock.c \
-Core/coremark_port/etm_selftrace.c
+Core/coremark_port/pll_ctrl.c \
+Core/coremark_port/cli.c \
+Core/coremark_port/etm_selftrace.c \
+Third-Party/argparse/argparse.c
 
 # ASM sources
 ASM_SOURCES =  \
@@ -128,8 +131,7 @@ C_DEFS =  \
 -DSTM32H743xx \
 -DITERATIONS=100 \
 -DPERFORMANCE_RUN=1 \
--DBOARD_ENABLE_CACHE \
--DFLAGS_STR=\"-O3+cache\"
+-DFLAGS_STR=\"O3\"
 
 
 # AS includes
@@ -140,6 +142,7 @@ C_INCLUDES =  \
 -ICore/Inc \
 -ICore/coremark \
 -ICore/coremark_port \
+-IThird-Party/argparse \
 -IDrivers/STM32H7xx_HAL_Driver/Inc \
 -IDrivers/STM32H7xx_HAL_Driver/Inc/Legacy \
 -IDrivers/CMSIS/Device/ST/STM32H7xx/Include \

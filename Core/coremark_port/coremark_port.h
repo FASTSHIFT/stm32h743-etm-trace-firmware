@@ -22,8 +22,13 @@ void cm_uart_init(UART_HandleTypeDef *huart);
 /* One char out the registered UART (called by ee_printf's uart_send_char). */
 void cm_uart_send_char(char c);
 
-/* CoreMark entry: runs the benchmark (calls upstream main()), prints the score
- * over UART, then idles. Never returns. */
+/* CoreMark entry: runs the benchmark in a loop until the CLI switches
+ * workload away. Prints score over UART every iteration. */
 void coremark_main(void);
+
+/* Run exactly ONE CoreMark iteration and return. Called by workload_run() so
+ * the scheduler can re-check the workload flag between rounds without
+ * blocking on an internal loop. */
+void coremark_main_one(void);
 
 #endif /* COREMARK_PORT_H */
