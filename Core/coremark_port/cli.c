@@ -103,8 +103,9 @@ static void print_pll_state(const struct pll_state *s)
     printf("  HSE %lu  ref %lu  VCO %lu\r\n",
            (unsigned long)s->hse_hz, (unsigned long)(s->hse_hz / s->m),
            (unsigned long)((uint64_t)s->hse_hz * s->n / s->m));
-    printf("  sysclk %lu  pll1_r_ck=TRACECLK %lu  SystemCoreClock %lu\r\n",
+    printf("  sysclk %lu  pll1_r_ck %lu  TRACECLK(pin,/2) %lu  SystemCoreClock %lu\r\n",
            (unsigned long)pll_ctrl_sysclk_hz(s),
+           (unsigned long)pll_ctrl_pll1r_hz(s),
            (unsigned long)pll_ctrl_traceclk_hz(s),
            (unsigned long)SystemCoreClock);
 }

@@ -44,10 +44,14 @@ uint32_t pll_ctrl_pll1r_hz(const struct pll_state *s)
     return (uint32_t)(((uint64_t)s->hse_hz * s->n) / s->m / s->r);
 }
 
-/* On H7 the parallel TPIU trace clock is pll1_r_ck (RM0433 §60.2). */
+/* TRACECLK on the pin. RM0433: TRACECLK is derived from pll1_r_ck, and the
+ * TPIU parallel port drives DDR data so the pin clock runs at HALF the
+ * internal bit-clock (pll1_r_ck). Board-measured on the scope: R=2 ->
+ * pll1_r_ck 225MHz -> TRACECLK pin 112MHz; R=8 -> 56.25MHz -> 28MHz. So the
+ * visible TRACECLK edge rate = pll1_r_ck / 2. */
 uint32_t pll_ctrl_traceclk_hz(const struct pll_state *s)
 {
-    return pll_ctrl_pll1r_hz(s);
+    return pll_ctrl_pll1r_hz(s) / 2u;
 }
 
 void pll_ctrl_uart1_to_hsi(UART_HandleTypeDef *huart)
