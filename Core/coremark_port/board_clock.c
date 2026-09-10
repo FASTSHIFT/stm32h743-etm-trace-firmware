@@ -38,12 +38,15 @@
 #define PLL_Q_OVR 4
 #endif
 #ifndef PLL_R_OVR
-/* R=4 -> pll1_r_ck = 450/4 = 112.5MHz -> TRACECLK pin = 56.25MHz (/2).
- * Chosen as the cold-init default because 56MHz is where the eye is open
- * (scope Q~7.0) vs the marginal SI at 112MHz pin (R=2, Q~3.5): see
- * stage4-datapath/23-center-aligned-capture-retro.md. Raise/lower at runtime
- * with the `pll --r N --apply` CLI command. */
-#define PLL_R_OVR 4
+/* R=22 -> pll1_r_ck = 450/22 = 20.45MHz -> TRACECLK pin = 10.2MHz (/2).
+ * LOW-FREQUENCY DIAGNOSTIC BUILD (2026-09-10): drop the trace-port clock ~5.5x
+ * below the 56MHz operating point to decide whether the residual capture
+ * corruption is timing/SI (should vanish at 10MHz) or a logic bug in the
+ * IDDR/nibble-pair/CDC path (survives at any clock). sysclk stays 150MHz
+ * (P=3) so the selftrace loop content is byte-identical to the 56MHz golden;
+ * only the pin edge rate changes. Revert to R=4 for normal operation.
+ * Raise/lower at runtime with the `pll --r N --apply` CLI command. */
+#define PLL_R_OVR 22
 #endif
 #ifndef PLL_VCIRANGE_OVR
 #define PLL_VCIRANGE_OVR RCC_PLL1VCIRANGE_3

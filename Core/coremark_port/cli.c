@@ -70,7 +70,11 @@ enum workload_kind { WL_IDLE, WL_SELFTRACE, WL_COREMARK };
  * The CLI is still reachable during the ~pre-workload window and for the other
  * workloads; to reconfigure freq, hold in idle by building with WL_IDLE, or
  * poke pll over SWD. For the clean cross-check flow we want selftrace-at-boot. */
-static enum workload_kind s_workload = WL_SELFTRACE;   /* boot default */
+static enum workload_kind s_workload = WL_SELFTRACE;   /* boot default:
+   fire-and-forget capture at the cold-init PLL (currently R=22 -> ~10MHz
+   TRACECLK, the low-freq diagnostic point). sysclk/loop content unchanged.
+   The CLI is unreachable while selftrace runs (PRIMASK=1); to change freq at
+   runtime, rebuild with WL_IDLE or set the R divider in board_clock.c. */
 static struct etm_cfg     s_etm      = { .bb = 1, .stall = 1, .systick = 0 };
 static uint8_t            s_etm_dirty = 1;   /* re-apply on next selftrace start */
 

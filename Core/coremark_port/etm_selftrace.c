@@ -18,8 +18,13 @@
 #define REG(a) (*(volatile uint32_t *)(a))
 
 const struct etm_cfg etm_cfg_default = {
-    .bb      = 1,   /* dense stream for the DAP/FPGA cross-check */
-    .stall   = 1,   /* lossless (CPU stalls when ETF fills) */
+    /* BB ON, but the ETM production rate is kept under the 450 Mbit/s TPIU
+     * egress by LOWERING sysclk (bigger DIVP1) while keeping TRACECLK pin at
+     * 56 MHz (DIVR1 unchanged). BB=1 gives full branch-target addresses (self-
+     * locating decode); at reduced CPU clock the branch rate drops below the
+     * egress budget so the ETF no longer overflows. See doc 27. */
+    .bb      = 1,
+    .stall   = 1,   /* lossless backstop when the ETF nears full */
     .systick = 0,   /* no SysTick exceptions => tightest deterministic loop */
 };
 
