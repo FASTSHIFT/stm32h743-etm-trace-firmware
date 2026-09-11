@@ -38,15 +38,11 @@
 #define PLL_Q_OVR 4
 #endif
 #ifndef PLL_R_OVR
-/* R=22 -> pll1_r_ck = 450/22 = 20.45MHz -> TRACECLK pin = 10.2MHz (/2).
- * LOW-FREQUENCY DIAGNOSTIC BUILD (2026-09-10): drop the trace-port clock ~5.5x
- * below the 56MHz operating point to decide whether the residual capture
- * corruption is timing/SI (should vanish at 10MHz) or a logic bug in the
- * IDDR/nibble-pair/CDC path (survives at any clock). sysclk stays 150MHz
- * (P=3) so the selftrace loop content is byte-identical to the 56MHz golden;
- * only the pin edge rate changes. Revert to R=4 for normal operation.
- * Raise/lower at runtime with the `pll --r N --apply` CLI command. */
-#define PLL_R_OVR 22
+/* R=4 -> pll1_r_ck = 450/4 = 112.5MHz -> TRACECLK pin = 56.25MHz (/2).
+ * Normal operating point (eye open, scope Q~7.0). Raise/lower at runtime with
+ * the `pll --r N --apply` CLI command; a low-freq (R=22 -> ~10MHz) diagnostic
+ * point was used to prove the capture corruption is logic, not timing. */
+#define PLL_R_OVR 4
 #endif
 #ifndef PLL_VCIRANGE_OVR
 #define PLL_VCIRANGE_OVR RCC_PLL1VCIRANGE_3
