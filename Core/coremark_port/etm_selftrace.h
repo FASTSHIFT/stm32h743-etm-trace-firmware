@@ -25,11 +25,23 @@ struct etm_cfg {
     /* SysTick interrupt during the loop. 0 = off, 1 = on (exercises ETMv4
      * EXCEPTION / EXCEPTION_RET packets). */
     uint8_t systick;
+    /* ETMv4 TRCCONFIGR.TS (bit 11). Global timestamping:
+     *  0 = no in-stream timestamps. Time base must come from elsewhere (the
+     *      FPGA egress time base -- which measures ETF drain time, NOT
+     *      execution time, so it is wrong for fine-grained per-function timing).
+     *  1 = the ETM inserts TIMESTAMP packets (48-bit global count from the SoC
+     *      timestamp generator) at sync points and around exceptions. These are
+     *      anchored at EXECUTION time, so the decoder can time function
+     *      entry/exit by "nearest timestamp + instruction-count interpolation".
+     * NB (DDI0494D §3.4.7): TRCSTALLCTLR LEVEL!=0 may SUPPRESS in-stream
+     * timestamps. If ts=1 does not yield non-zero, increasing timestamps on the
+     * board, lower/disable stall and re-check. */
+    uint8_t ts;
 };
 
-/* Default config: BB=1, STALL=1, SysTick off (matches the pre-CLI hardcoded
- * setup that produced golden traces on 2026-09-04). Kept in sync with the
- * historical bring-up so behaviour is unchanged when the CLI is untouched. */
+/* Default config: BB=1, STALL=1, SysTick off, TS off (matches the pre-CLI
+ * hardcoded setup that produced golden traces on 2026-09-04). Kept in sync with
+ * the historical bring-up so behaviour is unchanged when the CLI is untouched. */
 extern const struct etm_cfg etm_cfg_default;
 
 /* Program ETM/TPIU/CSTF/ETF/GPIO for parallel trace using `cfg`. Called at
