@@ -29,7 +29,14 @@ DEBUG = 1
 # for verifying per-instruction decode order + conditional-branch atoms.
 # (The earlier -O0 "crash" was overclocking from the wrong 8MHz HSE base, now
 # fixed to 25MHz -- -O0 itself is fine.)
-OPT = -O3
+#
+# DEFAULT -O0: the whole point of the selftrace workload is a real, decodable
+# call tree (det_iter -> node -> leaf_add/leaf_xor). At -O3 the compiler inlines
+# the entire tree into workload_run (one giant instr range, no BL/RET), so the
+# Perfetto view has no function begin/end structure to place on the timeline --
+# just a row of zero-width instant markers. -O0 keeps every call a real BL/BLX
+# so the timestamped call graph is meaningful.
+OPT = -O0
 
 
 #######################################
@@ -131,7 +138,7 @@ C_DEFS =  \
 -DSTM32H743xx \
 -DITERATIONS=100 \
 -DPERFORMANCE_RUN=1 \
--DFLAGS_STR=\"O3\"
+-DFLAGS_STR=\"O0\"
 
 
 # AS includes
