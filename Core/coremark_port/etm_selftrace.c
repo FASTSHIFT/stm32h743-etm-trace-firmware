@@ -25,6 +25,7 @@ const struct etm_cfg etm_cfg_default = {
     .stall   = 1,   /* lossless backstop when the ETF nears full */
     .systick = 0,   /* no SysTick exceptions => tightest deterministic loop */
     .ts      = 0,   /* no in-stream timestamps (matches historical golden) */
+    .cc      = 0,   /* no cycle counting (matches historical golden) */
 };
 
 /* ------- deterministic workload ------------------------------------------ */
@@ -142,8 +143,13 @@ void etm_selftrace_setup(const struct etm_cfg *cfg)
      * exceptions, giving an EXECUTION-time base for the decoder instead of the
      * FPGA ETF-egress time. See DDI0494D §3.3.4. */
     ETM_REG(ETM_TRCCONFIGR) = (cfg->bb ? ETM_TRCCONFIGR_BB : 0u)
-                            | (cfg->ts ? ETM_TRCCONFIGR_TS : 0u);
+                            | (cfg->ts ? ETM_TRCCONFIGR_TS : 0u)
+                            | (cfg->cc ? ETM_TRCCONFIGR_CCI : 0u);
     ETM_REG(ETM_TRCTRACEIDR) = ETM_TRCTRACEIDR_ID2;
+    /* Cycle-count threshold: only meaningful when CCI is on. Emit a Cycle Count
+     * element once >= THRESHOLD cycles have accumulated (>= TRCIDR3.CCITMIN). */
+    if (cfg->cc)
+        ETM_REG(ETM_TRCCCCTLR) = ETM_TRCCCCTLR_THRESHOLD;
     /* TRCSTALLCTLR: lossless backstop. NB (DDI0494D §3.4.7): LEVEL!=0 may
      * SUPPRESS in-stream timestamps. When ts is requested, drop the stall LEVEL
      * to 0 (keep ISTALL so overflow is still bounded) so timestamp packets are
@@ -152,7 +158,28 @@ void etm_selftrace_setup(const struct etm_cfg *cfg)
         ? (cfg->ts ? ETM_TRCSTALLCTLR_ISTALL : ETM_TRCSTALLCTLR_LOSSLESS)
         : 0u;
     ETM_REG(ETM_TRCVICTLR) = ETM_TRCVICTLR_TRACE_ALL;
+    /* NB: board-measured 2026 — lowering TRCSYNCPR (tried 2^8) does NOT raise
+     * the TIMESTAMP packet rate on this M7 (TS stayed ~1 per 105 us either
+     * way): TS insertion here is driven by an internal period, not the sync
+     * period. So keep the 4K sync period; time-base resolution between TS
+     * anchors comes from host-side interpolation. But the rate CAN be raised
+     * via TRCTSCTLR + the counter (below), which is the real knob. */
     ETM_REG(ETM_TRCSYNCPR) = ETM_TRCSYNCPR_4K;
+
+    /* Timestamp rate: leave TRCTSCTLR at 0 (implicit TS points only, ~1 per
+     * 105 us board-measured). The ETMv4 way to make TS denser is a counter in
+     * self-reload mode driving the timestamp event -- but on THIS M7
+     * (instruction-only configuration) TRCCNTCTLR0/TRCCNTVR0 are RAZ/WI
+     * (DDI0494D Table 3-1 note a: counter control/value exist only in the
+     * instruction+data configuration). Board-confirmed: TRCCNTRLDVR0 accepts a
+     * value but TRCCNTCTLR0 stays 0, so the counter never counts; pointing
+     * TRCTSCTLR at counter-0-at-zero then leaves that resource permanently
+     * active and CORRUPTS the trace (measured ~2.17M dropped calls vs 0). So
+     * the counter path is a dead end here -- so instead we enable cycle
+     * counting (cfg->cc, TRCCONFIGR.CCI above) and interpolate between the
+     * sparse implicit TS anchors with real CPU cycle counts on the host. */
+    ETM_REG(ETM_TRCTSCTLR) = 0;
+
     ETM_REG(ETM_TRCPRGCTLR) = ETM_TRCPRGCTLR_EN;
 
     if (cfg->systick) {

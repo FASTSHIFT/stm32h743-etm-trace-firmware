@@ -184,8 +184,44 @@
 /* TRCTRACEIDR: ATB ID = 2 (matches host demux). */
 #define ETM_TRCTRACEIDR_ID2       0x00000002u
 
-/* TRCSYNCPR: periodic sync every 2^12 bytes. */
-#define ETM_TRCSYNCPR_4K          0x0000000Cu
+/* TRCSYNCPR: periodic synchronization period = 2^N bytes of trace. This is the
+ * A-sync/trace-info period; board-measured it does NOT change the TIMESTAMP
+ * rate on this M7 (TS is driven by TRCTSCTLR/counter, not the sync period). */
+#define ETM_TRCSYNCPR_256         0x00000008u /* 2^8  */
+#define ETM_TRCSYNCPR_1K          0x0000000Au /* 2^10 */
+#define ETM_TRCSYNCPR_4K          0x0000000Cu /* 2^12 */
+
+/* ---- Timestamp-rate control (TRCTSCTLR) -----------------------------------
+ * The ETM TIMESTAMP rate is controlled by TRCTSCTLR.EVENT (a resource
+ * selector), NOT by TRCSYNCPR. The usual way to make it periodic is an ETMv4
+ * counter in self-reload mode whose "counter-at-zero" drives the TS event.
+ *
+ * DEAD END ON THIS PART: the M7 in instruction-only configuration exposes a
+ * counter (TRCIDR5.NUMCNTR=1) and its reload register (TRCCNTRLDVR0), but its
+ * control and value registers (TRCCNTCTLR0/TRCCNTVR0) are RAZ/WI here
+ * (DDI0494D Table 3-1 note a: those exist only in the instruction+data
+ * configuration). Board-confirmed: TRCCNTCTLR0 stays 0, the counter never
+ * counts, and wiring TRCTSCTLR to counter-at-zero leaves that resource
+ * permanently active and corrupts the trace (~2.17M dropped calls). So we keep
+ * TRCTSCTLR = 0 (implicit TS anchors, ~105 us apart) and interpolate on the
+ * host. The register addresses are kept for reference / a future instr+data
+ * part. */
+#define ETM_TRCTSCTLR    (ETM_BASE + 0x030u)  /* global timestamp control */
+
+/* ---- Cycle counting (the real per-function precision lever) ---------------
+ * TRCCONFIGR.CCI (bit 4) enables cycle counting; TRCCCCTLR sets the threshold.
+ * When enabled, the ETM emits Cycle Count elements giving the exact number of
+ * processor cycles between commits, so the decoder can time instruction ranges
+ * to CPU-cycle resolution (150 MHz -> 6.7 ns) and INTERPOLATE between the
+ * sparse global-timestamp anchors with real cycle counts, not a uniform-rate
+ * guess. Cortex-M7 implements it (TRCIDR0.TRCCCI=1), unlike the M4.
+ *
+ * A Cycle Count element is only emitted when the accumulated count reaches the
+ * TRCCCCTLR threshold (>= TRCIDR3.CCITMIN, board-read = 4). A smaller threshold
+ * = denser cycle counts = finer time but more bandwidth. TRCCCCTLR is RW here
+ * (board-confirmed: wrote 0x10, read back 0x10). */
+#define ETM_TRCCCCTLR    (ETM_BASE + 0x038u)  /* cycle count threshold */
+#define ETM_TRCCCCTLR_THRESHOLD 0x00000010u   /* 16 cycles (>= CCITMIN=4) */
 
 /* TRCPDCR: PU (bit 3) = power-up request. Without it the ETM stays power-gated
  * (TRCSTATR.PMSTABLE never sets) even though other registers read back fine. */

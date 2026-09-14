@@ -37,6 +37,12 @@ struct etm_cfg {
      * timestamps. If ts=1 does not yield non-zero, increasing timestamps on the
      * board, lower/disable stall and re-check. */
     uint8_t ts;
+    /* TRCCONFIGR.CCI (bit 4): cycle counting. When on, the ETM emits Cycle
+     * Count elements (exact CPU cycles between commits), giving the decoder
+     * CPU-cycle time resolution (~6.7 ns @150 MHz) to interpolate between the
+     * sparse global-timestamp anchors -- the real per-function precision lever
+     * on this M7 (TRCIDR0.TRCCCI=1). Costs some trace bandwidth. */
+    uint8_t cc;
 };
 
 /* Default config: BB=1, STALL=1, SysTick off, TS off (matches the pre-CLI

@@ -74,7 +74,11 @@ static enum workload_kind s_workload = WL_SELFTRACE;   /* boot default: fire the
    capture loop immediately at cold init so the trace IO is always live without
    needing the CLI (selftrace masks IRQs -> CLI unreachable while it runs). The
    ETM variant is set by s_etm below; rebuild to sweep BB / SysTick / STALL. */
-static struct etm_cfg     s_etm      = { .bb = 0, .stall = 1, .systick = 1, .ts = 1 };
+/* Boot default: BB=0 + SysTick + global timestamps + cycle counting. TS gives
+ * the sparse absolute anchors (~105 us); CC gives the exact CPU cycles between
+ * commits so the host can interpolate to ~6.7 ns between anchors. */
+static struct etm_cfg     s_etm      = { .bb = 0, .stall = 1, .systick = 1, .ts = 1,
+                                         .cc = 1 };
 static uint8_t            s_etm_dirty = 1;   /* re-apply on next selftrace start */
 
 /* Coordination flag: the workload loop checks this each iteration and, when
@@ -258,10 +262,12 @@ static int cmd_trace(int argc, const char **argv)
     int stall_v   = s_etm.stall;
     int systick_v = s_etm.systick;
     int ts_v      = s_etm.ts;
+    int cc_v      = s_etm.cc;
 
     static const char *usages[] = {
         "trace [--show]",
-        "trace [--bb 0|1] [--stall 0|1] [--systick 0|1] [--ts 0|1] --apply",
+        "trace [--bb 0|1] [--stall 0|1] [--systick 0|1] [--ts 0|1] "
+        "[--cc 0|1] --apply",
         NULL,
     };
     struct argparse_option opts[] = {
@@ -276,6 +282,8 @@ static int cmd_trace(int argc, const char **argv)
                     NULL, 0, 0),
         OPT_INTEGER(0, "ts",      &ts_v,      "TRCCONFIGR.TS (global timestamps)",
                     NULL, 0, 0),
+        OPT_INTEGER(0, "cc",      &cc_v,      "TRCCONFIGR.CCI (cycle counting)",
+                    NULL, 0, 0),
         OPT_END(),
     };
     struct argparse ap;
@@ -284,28 +292,29 @@ static int cmd_trace(int argc, const char **argv)
         "\nReconfigure the ETMv4 without changing the workload.\n"
         "Effective on the next workload start unless --apply is given.\n", NULL);
     int rc_parse = argparse_parse(&ap, argc, argv);
-    printf("[trace] parse rc=%d  show=%d apply=%d bb=%d stall=%d systick=%d ts=%d\r\n",
-           rc_parse, show, apply, bb_v, stall_v, systick_v, ts_v);
+    printf("[trace] parse rc=%d  show=%d apply=%d bb=%d stall=%d systick=%d ts=%d cc=%d\r\n",
+           rc_parse, show, apply, bb_v, stall_v, systick_v, ts_v, cc_v);
     if (rc_parse < 0) {
         printf("[trace] argparse rejected the command\r\n");
         return 1;
     }
 
     if (show || !apply) {
-        printf("etm: bb=%u stall=%u systick=%u ts=%u\r\n",
-               s_etm.bb, s_etm.stall, s_etm.systick, s_etm.ts);
+        printf("etm: bb=%u stall=%u systick=%u ts=%u cc=%u\r\n",
+               s_etm.bb, s_etm.stall, s_etm.systick, s_etm.ts, s_etm.cc);
         if (!apply) return 0;
     }
     s_etm.bb      = (uint8_t)(bb_v != 0);
     s_etm.stall   = (uint8_t)(stall_v != 0);
     s_etm.systick = (uint8_t)(systick_v != 0);
     s_etm.ts      = (uint8_t)(ts_v != 0);
+    s_etm.cc      = (uint8_t)(cc_v != 0);
     s_etm_dirty = 1;
     if (s_workload == WL_SELFTRACE) {
         s_workload_changed = 1;   /* force re-setup on next loop iteration */
     }
-    printf("etm queued: bb=%u stall=%u systick=%u ts=%u  (%s)\r\n",
-           s_etm.bb, s_etm.stall, s_etm.systick, s_etm.ts,
+    printf("etm queued: bb=%u stall=%u systick=%u ts=%u cc=%u  (%s)\r\n",
+           s_etm.bb, s_etm.stall, s_etm.systick, s_etm.ts, s_etm.cc,
            s_workload == WL_SELFTRACE ? "reapplying" : "pending workload start");
     return 0;
 }
