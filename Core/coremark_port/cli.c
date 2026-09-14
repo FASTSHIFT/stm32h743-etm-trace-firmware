@@ -70,10 +70,16 @@ enum workload_kind { WL_IDLE, WL_SELFTRACE, WL_COREMARK };
  * The CLI is still reachable during the ~pre-workload window and for the other
  * workloads; to reconfigure freq, hold in idle by building with WL_IDLE, or
  * poke pll over SWD. For the clean cross-check flow we want selftrace-at-boot. */
-static enum workload_kind s_workload = WL_SELFTRACE;   /* boot default: fire the
-   capture loop immediately at cold init so the trace IO is always live without
-   needing the CLI (selftrace masks IRQs -> CLI unreachable while it runs). The
-   ETM variant is set by s_etm below; rebuild to sweep BB / SysTick / STALL. */
+static enum workload_kind s_workload = WL_COREMARK;   /* boot default: run
+   CoreMark under trace at cold init for the bandwidth/decode bring-up. Unlike
+   selftrace's infinite masked loop, the CoreMark scheduler polls the CLI
+   between rounds, so `run selftrace|idle` still works. ETM config = s_etm. */
+/* Boot cache default for the CoreMark bring-up: cache is the dominant trace-
+ * rate driver (doc 29), so enable it at boot to measure the cache-on rate. The
+ * `cache on|off` CLI command still overrides at runtime. */
+static uint8_t            s_cache_on = 1;
+static uint8_t            s_cache_applied = 0;
+
 /* Boot default: BB=0 + SysTick + global timestamps + cycle counting. TS gives
  * the sparse absolute anchors (~105 us); CC gives the exact CPU cycles between
  * commits so the host can interpolate to ~6.7 ns between anchors. */
@@ -328,10 +334,12 @@ static int cmd_cache(int argc, const char **argv)
     if (strcmp(argv[1], "on") == 0) {
         SCB_EnableICache();
         SCB_EnableDCache();
+        s_cache_on = 1;
         printf("I/D cache: ON\r\n");
     } else if (strcmp(argv[1], "off") == 0) {
         SCB_DisableDCache();
         SCB_DisableICache();
+        s_cache_on = 0;
         printf("I/D cache: OFF\r\n");
     } else {
         printf("usage: cache on|off\r\n");
@@ -503,8 +511,27 @@ void workload_run(void)
             /* unreachable */
 
         case WL_COREMARK:
+            /* Configure the ETM the same way selftrace does (etm_selftrace_setup
+             * only programs the ETM/TPIU/ETF/GPIO path -- it is workload-
+             * agnostic), so CoreMark is traced under the current s_etm config
+             * (BB/systick/ts/cc). Re-applied whenever the config is dirtied. */
+            if (s_etm_dirty) {
+                etm_selftrace_setup(&s_etm);
+                s_etm_dirty = 0;
+            }
+            /* Apply the boot cache default once (I+D cache). cache is the main
+             * trace-rate driver (doc 29), so this bring-up default lets us
+             * measure the cache-on generation rate without racing the CLI. The
+             * `cache on|off` command still overrides at runtime. */
+            if (!s_cache_applied) {
+                if (s_cache_on) {
+                    SCB_EnableICache();
+                    SCB_EnableDCache();
+                }
+                s_cache_applied = 1;
+            }
             /* selftrace's pure mode masks IRQs (PRIMASK=1); restore them here
-             * so HAL ticks / peripherals work for CoreMark. */
+             * so HAL ticks / peripherals work for CoreMark (and SysTick trace). */
             __asm volatile ("cpsie i" ::: "memory");
             coremark_main_one();
             cli_poll();
