@@ -43,6 +43,16 @@ struct etm_cfg {
      * sparse global-timestamp anchors -- the real per-function precision lever
      * on this M7 (TRCIDR0.TRCCCI=1). Costs some trace bandwidth. */
     uint8_t cc;
+    /* DWT data-value trace on a WRITE to a watched address (nxtrace thread-
+     * switch mechanism, docs/01 P0). When on, etm_selftrace_setup also enables
+     * the ITM ATB path + funnel extra ports and programs DWT comparator 0 to
+     * emit a data-value packet (payload = written value) for each write to
+     * `dwt_watch_addr`. 0 = ETM-only (historical behaviour, unchanged). */
+    uint8_t dwt;
+    /* Address DWT comparator 0 watches for writes. For the P0 ground-truth test
+     * this is a firmware global written every iteration; for NuttX it will be
+     * &g_running_tasks. Ignored when dwt=0. */
+    uint32_t dwt_watch_addr;
 };
 
 /* Default config: BB=1, STALL=1, SysTick off, TS off (matches the pre-CLI
@@ -58,5 +68,14 @@ void etm_selftrace_setup(const struct etm_cfg *cfg);
  * leaf_add + leaf_xor). The scheduler calls this in a tight loop with a
  * cli_poll() between iterations. */
 void etm_selftrace_iterate(void);
+
+/* P0 DWT ground-truth probe (docs/01 §6). Address of a firmware global that
+ * dwt=1 watches by default; etm_dwt_probe_tick() writes a monotonically
+ * increasing value to it so each write should emit exactly one DWT data-value
+ * packet whose payload equals the value we wrote -- letting us confirm, off
+ * the board, that ETM(stream2) and DWT(streamN) co-exist on the parallel TPIU
+ * and share the global timestamp, WITHOUT needing NuttX. */
+uint32_t etm_dwt_probe_addr(void);
+void     etm_dwt_probe_tick(void);
 
 #endif /* ETM_SELFTRACE_H */

@@ -269,11 +269,12 @@ static int cmd_trace(int argc, const char **argv)
     int systick_v = s_etm.systick;
     int ts_v      = s_etm.ts;
     int cc_v      = s_etm.cc;
+    int dwt_v     = s_etm.dwt;
 
     static const char *usages[] = {
         "trace [--show]",
         "trace [--bb 0|1] [--stall 0|1] [--systick 0|1] [--ts 0|1] "
-        "[--cc 0|1] --apply",
+        "[--cc 0|1] [--dwt 0|1] --apply",
         NULL,
     };
     struct argparse_option opts[] = {
@@ -290,6 +291,8 @@ static int cmd_trace(int argc, const char **argv)
                     NULL, 0, 0),
         OPT_INTEGER(0, "cc",      &cc_v,      "TRCCONFIGR.CCI (cycle counting)",
                     NULL, 0, 0),
+        OPT_INTEGER(0, "dwt",     &dwt_v,     "DWT data trace on g_running_tasks "
+                    "write (P0 probe)", NULL, 0, 0),
         OPT_END(),
     };
     struct argparse ap;
@@ -298,16 +301,17 @@ static int cmd_trace(int argc, const char **argv)
         "\nReconfigure the ETMv4 without changing the workload.\n"
         "Effective on the next workload start unless --apply is given.\n", NULL);
     int rc_parse = argparse_parse(&ap, argc, argv);
-    printf("[trace] parse rc=%d  show=%d apply=%d bb=%d stall=%d systick=%d ts=%d cc=%d\r\n",
-           rc_parse, show, apply, bb_v, stall_v, systick_v, ts_v, cc_v);
+    printf("[trace] parse rc=%d  show=%d apply=%d bb=%d stall=%d systick=%d ts=%d cc=%d dwt=%d\r\n",
+           rc_parse, show, apply, bb_v, stall_v, systick_v, ts_v, cc_v, dwt_v);
     if (rc_parse < 0) {
         printf("[trace] argparse rejected the command\r\n");
         return 1;
     }
 
     if (show || !apply) {
-        printf("etm: bb=%u stall=%u systick=%u ts=%u cc=%u\r\n",
-               s_etm.bb, s_etm.stall, s_etm.systick, s_etm.ts, s_etm.cc);
+        printf("etm: bb=%u stall=%u systick=%u ts=%u cc=%u dwt=%u watch=0x%08lx\r\n",
+               s_etm.bb, s_etm.stall, s_etm.systick, s_etm.ts, s_etm.cc,
+               s_etm.dwt, (unsigned long)s_etm.dwt_watch_addr);
         if (!apply) return 0;
     }
     s_etm.bb      = (uint8_t)(bb_v != 0);
@@ -315,12 +319,13 @@ static int cmd_trace(int argc, const char **argv)
     s_etm.systick = (uint8_t)(systick_v != 0);
     s_etm.ts      = (uint8_t)(ts_v != 0);
     s_etm.cc      = (uint8_t)(cc_v != 0);
+    s_etm.dwt     = (uint8_t)(dwt_v != 0);
     s_etm_dirty = 1;
     if (s_workload == WL_SELFTRACE) {
         s_workload_changed = 1;   /* force re-setup on next loop iteration */
     }
-    printf("etm queued: bb=%u stall=%u systick=%u ts=%u cc=%u  (%s)\r\n",
-           s_etm.bb, s_etm.stall, s_etm.systick, s_etm.ts, s_etm.cc,
+    printf("etm queued: bb=%u stall=%u systick=%u ts=%u cc=%u dwt=%u  (%s)\r\n",
+           s_etm.bb, s_etm.stall, s_etm.systick, s_etm.ts, s_etm.cc, s_etm.dwt,
            s_workload == WL_SELFTRACE ? "reapplying" : "pending workload start");
     return 0;
 }
@@ -506,8 +511,19 @@ void workload_run(void)
              * `run selftrace` (or via the cold-init default) and use the DAP
              * `reset` to leave -- selftrace is a fire-and-forget capture mode.
              * IRQs are already masked (PRIMASK=1) so nothing preempts this. */
-            for (;;)
-                etm_selftrace_iterate();
+            if (s_etm.dwt) {
+                /* P0 ground-truth: also write the DWT-watched probe global each
+                 * iteration so the capture carries DWT data-value packets
+                 * (stream 1) interleaved with the ETM instruction stream
+                 * (stream 2). The recovered payload must be 1,2,3,... */
+                for (;;) {
+                    etm_selftrace_iterate();
+                    etm_dwt_probe_tick();
+                }
+            } else {
+                for (;;)
+                    etm_selftrace_iterate();
+            }
             /* unreachable */
 
         case WL_COREMARK:

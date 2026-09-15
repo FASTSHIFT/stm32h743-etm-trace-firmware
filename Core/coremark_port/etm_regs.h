@@ -92,11 +92,19 @@
 
 /* ======================================================================
  * CoreSight Trace Funnel (CSTF, APB-D alias 0x5C013000). ETM ATB -> funnel S0.
+ * The funnel merges multiple ATB trace sources into one stream feeding the ETF.
+ * Board-confirmed: ETM reaches the TPIU with only S0 enabled. Which slave port
+ * the CM7 ITM/DWT ATB lands on is NOT documented by ST and is the P0 unknown --
+ * enabling an extra port is harmless (an unconnected port has no source), so we
+ * OR in S1/S2 when DWT trace is requested and let the board test reveal which
+ * one actually carries the ITM stream. (RM0433 §60 / CoreSight SoC-400 funnel.)
  * ==================================================================== */
 #define CSTF_BASE        0x5C013000u
 #define CSTF_CTRL        (CSTF_BASE + 0x000u)
 #define CSTF_LAR         (CSTF_BASE + CS_LAR_OFFSET)
 #define CSTF_CTRL_ENS0     (1u << 0)          /* enable slave port 0 (ETM) */
+#define CSTF_CTRL_ENS1     (1u << 1)          /* slave port 1 (ITM? P0 confirms) */
+#define CSTF_CTRL_ENS2     (1u << 2)          /* slave port 2 (ITM? P0 confirms) */
 
 /* ======================================================================
  * Embedded Trace FIFO (ETF / CoreSight TMC, APB-D alias 0x5C014000).
@@ -241,5 +249,54 @@
 /* SCB ICSR: PENDSTCLR (bit 25) clears a latched-pending SysTick. */
 #define SCB_ICSR         0xE000ED04u
 #define SCB_ICSR_PENDSTCLR (1u << 25)
+
+/* ======================================================================
+ * DWT (Data Watchpoint and Trace, core PPB 0xE0001000) + ITM (0xE0000000).
+ * These ARE defined by CMSIS (core_cm7.h) as DWT_Type/ITM_Type, but this
+ * firmware programs the trace path from raw addresses (etm_regs.h) to keep the
+ * whole bring-up in one auditable place and avoid pulling struct layouts into
+ * the register-poke style used above. Offsets: ARMv7-M ARM (DDI0403E).
+ *
+ * DWT DATA-TRACE (the nxtrace thread-switch mechanism, docs/01):
+ *   Program a comparator's FUNCTION to 0x0D ("generate data-trace data-value
+ *   packet on a WRITE to COMPn") with MASKn=0 (exact address match). Then every
+ *   write to COMPn emits a data-value packet whose payload IS the written value
+ *   -- e.g. watch &g_running_tasks and the new TCB pointer lands in the stream,
+ *   no target-memory read-back (so short-lived threads are never missed). The
+ *   packet goes out via the ITM/DWT ATB -> funnel -> ETF -> parallel TPIU,
+ *   sharing ETM's global timestamp. FUNCTION=0x07 is a WATCHPOINT (halts the
+ *   CPU) -- do NOT use it here. (DDI0403E Table C1-14 / C11.5.)
+ * ==================================================================== */
+#define DWT_BASE         0xE0001000u
+#define DWT_CTRL_REG     (DWT_BASE + 0x000u)  /* NUMCOMP in [31:28] (RO) */
+#define DWT_COMP0        (DWT_BASE + 0x020u)
+#define DWT_MASK0        (DWT_BASE + 0x024u)
+#define DWT_FUNCTION0    (DWT_BASE + 0x028u)
+/* Second comparator (for optionally putting the TCB pid into the stream too;
+ * see docs/01 §4.3). Comparator stride is 0x10. */
+#define DWT_COMP1        (DWT_BASE + 0x030u)
+#define DWT_MASK1        (DWT_BASE + 0x034u)
+#define DWT_FUNCTION1    (DWT_BASE + 0x038u)
+
+#define DWT_FUNCTION_DATAVWRITE 0x0000000Du   /* data-value packet on write */
+#define DWT_FUNCTION_MATCHED    (1u << 24)     /* RO: comparator has matched */
+
+/* ITM (the unit that actually emits DWT-sourced hardware packets onto the ATB).
+ * TCR must have ITMENA + a non-zero ATB ID (TraceBusID); the sync/ts enables
+ * mirror the SWO-side board-proven sequence (orbtrace h743-dwt-thread-trace).*/
+#define ITM_BASE         0xE0000000u
+#define ITM_TER          (ITM_BASE + 0xE00u)   /* trace enable (stimulus ports) */
+#define ITM_TCR          (ITM_BASE + 0xE80u)   /* trace control */
+#define ITM_LAR          (ITM_BASE + CS_LAR_OFFSET)
+
+/* TCR: ITMENA(0) | TSENA(1) | SYNCENA(2) | DWTENA/TXENA(3) | TraceBusID[22:16].
+ * We tag ITM/DWT packets with ATB ID 1 (host demux: ETM=2, DWT/ITM=1). */
+#define ITM_TCR_ITMENA     (1u << 0)
+#define ITM_TCR_TSENA      (1u << 1)
+#define ITM_TCR_SYNCENA    (1u << 2)
+#define ITM_TCR_TXENA      (1u << 3)   /* forward DWT packets to the ATB/TPIU */
+#define ITM_TCR_TRACEBUSID_1 (1u << 16)
+#define ITM_TCR_DWT_ATB    (ITM_TCR_ITMENA | ITM_TCR_TSENA | ITM_TCR_SYNCENA \
+                            | ITM_TCR_TXENA | ITM_TCR_TRACEBUSID_1)
 
 #endif /* ETM_REGS_H */

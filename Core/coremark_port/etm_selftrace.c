@@ -36,6 +36,12 @@ const struct etm_cfg etm_cfg_default = {
 static volatile uint32_t g_sink;
 static volatile uint32_t g_seed = 0x1234u;
 
+/* P0 DWT ground-truth probe target. A plain global (not const/register) so DWT
+ * comparator 0 can watch writes to it. etm_dwt_probe_tick() writes an
+ * increasing value each time; the decoder should recover exactly that sequence
+ * from the DWT data-value packets. Stands in for &g_running_tasks until NuttX. */
+static volatile uint32_t g_dwt_probe;
+
 static uint32_t leaf_add(uint32_t x) { return x + 1u; }
 static uint32_t leaf_xor(uint32_t x) { return x ^ 0x55u; }
 
@@ -120,9 +126,14 @@ void etm_selftrace_setup(const struct etm_cfg *cfg)
     ETM_REG(TPIU_FFCR) = TPIU_FFCR_CONT;
     ETM_REG(TPIU_BASE + 0x204u) = 0;            /* ITCTRL: leave integration mode off */
 
-    /* 3b) CSTF funnel: enable ETM slave port S0. */
+    /* 3b) CSTF funnel: enable ETM slave port S0. When DWT data trace is
+     * requested, also open S1/S2 so the ITM/DWT ATB (whichever port it lands
+     * on -- undocumented by ST, resolved by the P0 board test) can merge into
+     * the same stream feeding the ETF/TPIU. Enabling an unconnected port is a
+     * no-op, so this is safe either way. */
     ETM_REG(CSTF_LAR) = CS_LAR_UNLOCK;
-    ETM_REG(CSTF_CTRL) |= CSTF_CTRL_ENS0;
+    ETM_REG(CSTF_CTRL) |= CSTF_CTRL_ENS0
+                        | (cfg->dwt ? (CSTF_CTRL_ENS1 | CSTF_CTRL_ENS2) : 0u);
 
     /* 3c) ETF: hardware-FIFO mode -> TPIU. */
     ETM_REG(ETF_CTL) = 0;                        /* disable to program */
@@ -182,6 +193,29 @@ void etm_selftrace_setup(const struct etm_cfg *cfg)
 
     ETM_REG(ETM_TRCPRGCTLR) = ETM_TRCPRGCTLR_EN;
 
+    /* 5) DWT data-value trace (nxtrace P0). Independent of the ETM instruction
+     * stream: the DWT unit watches WRITES to dwt_watch_addr and the ITM forwards
+     * the resulting data-value packets onto the ATB (ID 1), which the funnel
+     * merges with the ETM stream (ID 2) into the one parallel-TPIU output. The
+     * host then demuxes both streams from the same capture, sharing the ETM
+     * global timestamp. DEMCR.TRCENA (set in step 1) already gates DWT+ITM. */
+    if (cfg->dwt) {
+        uint32_t addr = cfg->dwt_watch_addr;
+        if (!addr)
+            addr = (uint32_t)(uintptr_t)&g_dwt_probe;  /* P0 default target */
+
+        /* ITM: unlock, then enable ITM + forward DWT packets to the ATB with a
+         * non-zero TraceBusID so the funnel/formatter tags them as stream 1. */
+        ETM_REG(ITM_LAR) = CS_LAR_UNLOCK;
+        ETM_REG(ITM_TCR) = ITM_TCR_DWT_ATB;
+
+        /* DWT comparator 0: exact-match (MASK=0) data-value packet on WRITE. */
+        ETM_REG(DWT_FUNCTION0) = 0;                 /* disable while programming */
+        ETM_REG(DWT_COMP0)     = addr;
+        ETM_REG(DWT_MASK0)     = 0;                 /* match the exact address */
+        ETM_REG(DWT_FUNCTION0) = DWT_FUNCTION_DATAVWRITE;
+    }
+
     if (cfg->systick) {
         systick_on();
         __asm volatile ("cpsie i" ::: "memory");   /* need IRQs for SysTick test */
@@ -200,4 +234,21 @@ void etm_selftrace_iterate(void)
 {
     g_seed = det_iter(g_seed);
     g_sink = g_seed;
+}
+
+/* ------- P0 DWT ground-truth probe --------------------------------------- */
+
+uint32_t etm_dwt_probe_addr(void)
+{
+    return (uint32_t)(uintptr_t)&g_dwt_probe;
+}
+
+void etm_dwt_probe_tick(void)
+{
+    /* Each write to a DWT-watched address emits one data-value packet carrying
+     * the written value. Use an incrementing counter so the host can verify the
+     * recovered payload sequence is exactly 1,2,3,... (no drops, no dups) and
+     * that each packet's timestamp falls within the concurrent ETM timeline. */
+    static uint32_t n;
+    g_dwt_probe = ++n;
 }
