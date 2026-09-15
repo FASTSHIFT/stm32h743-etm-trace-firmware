@@ -12,6 +12,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include <stdint.h>
+#include <stdio.h>
 #include "etm_selftrace.h"
 #include "etm_regs.h"
 
@@ -214,6 +215,20 @@ void etm_selftrace_setup(const struct etm_cfg *cfg)
         ETM_REG(DWT_COMP0)     = addr;
         ETM_REG(DWT_MASK0)     = 0;                 /* match the exact address */
         ETM_REG(DWT_FUNCTION0) = DWT_FUNCTION_DATAVWRITE;
+
+        /* Self-readback over UART -- bypasses openocd entirely (a debugger
+         * connect CLEARS DWT_FUNCTION, so an SWD read always shows 0 and can't
+         * tell us if the firmware armed it). Printing from the CPU is the only
+         * way to see the value the hardware actually latched. DWT_CTRL.NOTRCPKT
+         * (bit24) must be 0 for data-value packets to be emittable at all. */
+        printf("[dwt] CTRL=0x%08lx COMP0=0x%08lx MASK0=0x%08lx FUNC0=0x%08lx "
+               "ITM_TCR=0x%08lx (watch=0x%08lx)\r\n",
+               (unsigned long)ETM_REG(DWT_CTRL_REG),
+               (unsigned long)ETM_REG(DWT_COMP0),
+               (unsigned long)ETM_REG(DWT_MASK0),
+               (unsigned long)ETM_REG(DWT_FUNCTION0),
+               (unsigned long)ETM_REG(ITM_TCR),
+               (unsigned long)addr);
     }
 
     if (cfg->systick) {
