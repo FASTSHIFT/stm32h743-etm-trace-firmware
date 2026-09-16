@@ -91,20 +91,31 @@
 #define TPIU_FFCR_CONT     0x00000102u        /* EnFCont | EnFTC */
 
 /* ======================================================================
- * CoreSight Trace Funnel (CSTF, APB-D alias 0x5C013000). ETM ATB -> funnel S0.
- * The funnel merges multiple ATB trace sources into one stream feeding the ETF.
- * Board-confirmed: ETM reaches the TPIU with only S0 enabled. Which slave port
- * the CM7 ITM/DWT ATB lands on is NOT documented by ST and is the P0 unknown --
- * enabling an extra port is harmless (an unconnected port has no source), so we
- * OR in S1/S2 when DWT trace is requested and let the board test reveal which
- * one actually carries the ITM stream. (RM0433 §60 / CoreSight SoC-400 funnel.)
+ * CoreSight Trace Funnel (CSTF, APB-D alias 0x5C013000). Merges two ATB trace
+ * sources into one stream feeding ETF -> TPIU (parallel port).
+ *
+ * SLAVE PORTS ARE DOCUMENTED (RM0433 Rev 8 §60.5.4, p.3135):
+ *   S0 = Cortex-M7 ETM      S1 = Cortex-M7 ITM
+ * (Confirmed vs Figure 827 p.3075: the trace-bus replicator copies the ITM ATB
+ * to BOTH CSTF and SWTF, so ITM/DWT data-value packets CAN reach the parallel
+ * TPIU via S1. The earlier "ENS1|ENS2" was wrong -- this funnel has NO S2; ITM
+ * is S1. See doc §11.7.)
+ *
+ * CSTF_CTRL     (0x000, reset 0x0000_0300): bit0 ENS0, bit1 ENS1 (off at reset)
+ * CSTF_PRIORITY (0x004, reset 0x0000_0688): PRIPORT0[2:0]=S0, PRIPORT1[5:3]=S1;
+ *   0=highest .. 7=lowest. Bits[31:6] reserved -- MUST be preserved (RMW), do
+ *   NOT overwrite the whole word (that corrupted the funnel earlier). RM0433:
+ *   "high priority to sources with small buffering" -> give ITM(S1) a smaller
+ *   number than ETM(S0) so the ETM firehose can't starve sparse DWT packets.
  * ==================================================================== */
 #define CSTF_BASE        0x5C013000u
 #define CSTF_CTRL        (CSTF_BASE + 0x000u)
+#define CSTF_PRIORITY    (CSTF_BASE + 0x004u)
 #define CSTF_LAR         (CSTF_BASE + CS_LAR_OFFSET)
 #define CSTF_CTRL_ENS0     (1u << 0)          /* enable slave port 0 (ETM) */
-#define CSTF_CTRL_ENS1     (1u << 1)          /* slave port 1 (ITM? P0 confirms) */
-#define CSTF_CTRL_ENS2     (1u << 2)          /* slave port 2 (ITM? P0 confirms) */
+#define CSTF_CTRL_ENS1     (1u << 1)          /* enable slave port 1 (ITM/DWT) */
+#define CSTF_PRIPORT0_MASK 0x00000007u        /* S0 (ETM) priority field */
+#define CSTF_PRIPORT1_MASK 0x00000038u        /* S1 (ITM) priority field */
 
 /* ======================================================================
  * Embedded Trace FIFO (ETF / CoreSight TMC, APB-D alias 0x5C014000).

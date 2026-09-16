@@ -127,14 +127,21 @@ void etm_selftrace_setup(const struct etm_cfg *cfg)
     ETM_REG(TPIU_FFCR) = TPIU_FFCR_CONT;
     ETM_REG(TPIU_BASE + 0x204u) = 0;            /* ITCTRL: leave integration mode off */
 
-    /* 3b) CSTF funnel: enable ETM slave port S0. When DWT data trace is
-     * requested, also open S1/S2 so the ITM/DWT ATB (whichever port it lands
-     * on -- undocumented by ST, resolved by the P0 board test) can merge into
-     * the same stream feeding the ETF/TPIU. Enabling an unconnected port is a
-     * no-op, so this is safe either way. */
+    /* 3b) CSTF funnel: S0=ETM (always). When DWT data trace is requested, also
+     * enable S1=ITM (RM0433 §60.5.4 p.3135: S0=ETM, S1=ITM -- documented) so
+     * the ITM/DWT data-value packets merge into the same ATB stream feeding
+     * ETF/TPIU (the parallel port). Then raise S1(ITM) priority ABOVE S0(ETM)
+     * via READ-MODIFY-WRITE (preserve the reserved bits -- overwriting the whole
+     * PRIORITY word corrupted the funnel in an earlier attempt). */
     ETM_REG(CSTF_LAR) = CS_LAR_UNLOCK;
-    ETM_REG(CSTF_CTRL) |= CSTF_CTRL_ENS0
-                        | (cfg->dwt ? (CSTF_CTRL_ENS1 | CSTF_CTRL_ENS2) : 0u);
+    ETM_REG(CSTF_CTRL) |= CSTF_CTRL_ENS0 | (cfg->dwt ? CSTF_CTRL_ENS1 : 0u);
+    if (cfg->dwt) {
+        uint32_t prio = ETM_REG(CSTF_PRIORITY);
+        prio &= ~(CSTF_PRIPORT0_MASK | CSTF_PRIPORT1_MASK);
+        prio |= (1u << 0)     /* PRIPORT0 = 1 (ETM, lower) */
+             |  (0u << 3);    /* PRIPORT1 = 0 (ITM, highest) */
+        ETM_REG(CSTF_PRIORITY) = prio;
+    }
 
     /* 3c) ETF: hardware-FIFO mode -> TPIU. */
     ETM_REG(ETF_CTL) = 0;                        /* disable to program */
